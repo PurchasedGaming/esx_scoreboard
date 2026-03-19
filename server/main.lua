@@ -1,55 +1,79 @@
 local config = require 'config.server'
-GlobalState.illegalActions = config.illegalActions
+GlobalState = GlobalState or {}
+GlobalState.illegalActions = config.illegalActions or {}
 
-lib.callback.register('qbx_scoreboard:server:getScoreboardData', function()
+ESX = exports["es_extended"]:getSharedObject()
+
+ESX.RegisterServerCallback('esx_scoreboard:getScoreboardData', function(source, cb)
+    local xPlayers = ESX.GetExtendedPlayers()
     local totalPlayers = 0
     local policeCount = 0
     local onDutyAdmins = {}
 
-    for _, v in pairs(exports.qbx_core:GetQBPlayers()) do
-        if v then
-            totalPlayers += 1
+    for _, xPlayer in pairs(xPlayers) do
+        totalPlayers = totalPlayers + 1
 
-            if v.PlayerData.job.type == 'leo' and v.PlayerData.job.onduty then
-                policeCount += 1
-            end
+        if xPlayer.job.name == 'police' then
+            policeCount = policeCount + 1
+        end
 
-            onDutyAdmins[v.PlayerData.source] = IsPlayerAceAllowed(v.PlayerData.source, 'admin') and v.PlayerData.metadata.optin and true or nil
+        if IsPlayerAceAllowed(xPlayer.source, 'admin') and xPlayer.get('metadata').optin then
+            onDutyAdmins[xPlayer.source] = true
         end
     end
 
-    return totalPlayers, policeCount, onDutyAdmins
+    cb({
+        totalPlayers = totalPlayers,
+        policeCount = policeCount,
+        onDutyAdmins = onDutyAdmins
+    })
 end)
 
-lib.callback.register('qbx_scoreboard:server:getOnlinePlayers', function(source)
+ESX.RegisterServerCallback('esx_scoreboard:getOnlinePlayers', function(source, cb)
+    local xPlayers = ESX.GetExtendedPlayers()
     local players = {}
 
-    for _, player in pairs(exports.qbx_core:GetQBPlayers()) do
-        if player then
-            local charInfo = player.PlayerData.charinfo
-            local name = charInfo and (charInfo.firstname .. ' ' .. charInfo.lastname) or 'Unknown'
-            local id = player.PlayerData.source
-            local jobLabel = player.PlayerData.job.label or player.PlayerData.job.name or 'Civilian'
-            local onDuty = player.PlayerData.job.onduty and ' (On Duty)' or ''
+    for _, xPlayer in pairs(xPlayers) do
+        local fullName = 'Unknown'
 
-            table.insert(players, {
-                name = name,
-                id   = id,
-                job  = jobLabel .. onDuty,
-            })
+        local charInfo = xPlayer.get('charinfo')
+        if charInfo and charInfo.firstname then
+            fullName = charInfo.firstname .. ' ' .. charInfo.lastname
+        elseif xPlayer.get('firstName') then
+            fullName = xPlayer.get('firstName') .. ' ' .. (xPlayer.get('lastName') or '')
+        elseif xPlayer.getName() then
+            fullName = xPlayer.getName()
         end
+
+        local id = xPlayer.source
+        local jobLabel = xPlayer.job.label or xPlayer.job.name or 'Civilian'
+        local onDuty = xPlayer.job.onduty and ' (On Duty)' or ''
+
+        table.insert(players, {
+            name = fullName,
+            id   = id,
+            job  = jobLabel .. onDuty,
+        })
     end
 
-    table.sort(players, function(a, b) return a.name < b.name end)
+    table.sort(players, function(a, b)
+        return a.name < b.name
+    end)
 
-    return players
+    cb(players)
+end)
+
+RegisterNetEvent('esx:setJob', function(job)
+    TriggerClientEvent('esx_scoreboard:refresh', -1)
 end)
 
 local function setActivityBusy(name, bool)
     local illegalActions = GlobalState.illegalActions
-    illegalActions[name].busy = bool
-    GlobalState.illegalActions = illegalActions
+    if illegalActions[name] then
+        illegalActions[name].busy = bool
+        GlobalState.illegalActions = illegalActions
+    end
 end
 
-RegisterNetEvent('qb-scoreboard:server:SetActivityBusy', setActivityBusy)
+RegisterNetEvent('esx_scoreboard:SetActivityBusy', setActivityBusy)
 exports('SetActivityBusy', setActivityBusy)
